@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JW 影片連結提取器 - 終極修復版</title>
+    <title>JW 影片連結提取器 - 勾選優化版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .video-card:hover { transform: translateY(-2px); transition: all 0.2s ease; }
@@ -13,14 +13,21 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; rounded: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+        /* 隱藏原生打勾框時的點擊特效 */
+        .video-cb { accent-color: #4f46e5; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen font-sans text-slate-900">
 
     <div class="max-w-4xl mx-auto p-6">
-        <div class="bg-white rounded-2xl shadow-md p-8 mb-6 border border-gray-100">
-            <h1 class="text-3xl font-bold text-slate-800 mb-2 text-center">JW 影片連結提取器</h1>
-            <p class="text-slate-500 text-center mb-8">支援動態語言代碼轉換 (cmn-hant ➝ CH)</p>
+        <div class="bg-white rounded-2xl shadow-md p-8 mb-6 border border-gray-100 relative">
+            <!-- 新增手動開啟說明的按鈕 -->
+            <button id="showHelpBtn" class="absolute top-4 right-4 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-1.5 px-3 rounded-lg text-sm font-bold transition-colors flex items-center gap-1 shadow-sm border border-indigo-100">
+                📖 使用說明
+            </button>
+            
+            <h1 class="text-3xl font-bold text-slate-800 mb-2 text-center mt-2">JW 影片連結提取器</h1>
+            <p class="text-slate-500 text-center mb-8">支援動態語言轉換與自訂勾選複製</p>
             
             <div class="space-y-4">
                 <div class="flex flex-col gap-2">
@@ -36,19 +43,37 @@
                     <button id="fetchBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-10 rounded-xl transition-all shadow-lg flex items-center gap-2">
                         立即提取影片
                     </button>
-                    <button id="copyAllBtn" class="hidden bg-white border-2 border-slate-200 text-slate-600 font-bold py-3 px-8 rounded-xl hover:border-indigo-500 transition-all">
-                        複製所有連結
-                    </button>
                 </div>
             </div>
         </div>
 
         <div id="statusBox" class="hidden mb-6 p-4 rounded-xl text-center font-medium border"></div>
         
-        <!-- 影片結果區塊 -->
-        <div id="results" class="grid grid-cols-1 gap-4 mb-6"></div>
+        <!-- 操作面板 (全選、區間選取 & 複製選取項目) -->
+        <div id="actionPanel" class="hidden flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 sticky top-4 z-10">
+            <div class="flex flex-wrap items-center justify-center gap-4 w-full md:w-auto">
+                <label class="flex items-center gap-2 cursor-pointer text-slate-700 font-bold select-none hover:text-indigo-600 transition-colors">
+                    <input type="checkbox" id="selectAllCheckbox" class="w-5 h-5 rounded border-slate-300 video-cb cursor-pointer">
+                    全選
+                </label>
+                <div class="hidden md:block h-6 w-px bg-slate-200"></div>
+                <div class="flex items-center gap-2 text-sm bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 shadow-inner">
+                    <span class="text-slate-600 font-bold whitespace-nowrap">區間：</span>
+                    <input type="number" id="rangeStart" placeholder="1" class="w-14 px-1 py-1 border border-slate-300 rounded text-center focus:ring-2 focus:ring-indigo-500 outline-none" min="1">
+                    <span class="text-slate-400 font-medium">~</span>
+                    <input type="number" id="rangeEnd" placeholder="20" class="w-14 px-1 py-1 border border-slate-300 rounded text-center focus:ring-2 focus:ring-indigo-500 outline-none" min="1">
+                    <button id="selectRangeBtn" class="bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 transition-all font-bold shadow-sm whitespace-nowrap">選取</button>
+                </div>
+            </div>
+            <button id="copySelectedBtn" class="w-full md:w-auto shrink-0 bg-indigo-100 text-indigo-700 font-bold py-2 px-6 rounded-lg hover:bg-indigo-200 hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                複製選取的連結 (0)
+            </button>
+        </div>
 
-        <!-- 除錯面板：如果再失敗，可以看這裡是哪裡卡住 -->
+        <!-- 影片結果區塊 -->
+        <div id="results" class="grid grid-cols-1 gap-3 mb-6"></div>
+
+        <!-- 除錯面板 -->
         <div class="bg-slate-800 rounded-xl p-4 shadow-inner">
             <div class="flex justify-between items-center mb-2">
                 <span class="text-slate-300 font-mono text-sm font-bold">🛠️ 系統執行日誌 (Debug Log)</span>
@@ -58,12 +83,112 @@
         </div>
     </div>
 
+    <!-- 新增：使用說明彈出視窗 (Modal) -->
+    <div id="helpModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <!-- 黑色半透明背景 -->
+        <div id="helpModalBg" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300 opacity-0"></div>
+        
+        <!-- 視窗主體 -->
+        <div id="helpModalContent" class="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden transform transition-all duration-300 scale-95 opacity-0">
+            <div class="bg-indigo-600 p-5 text-white flex justify-between items-center">
+                <h2 class="text-xl font-bold flex items-center gap-2">📖 如何使用影片提取器？</h2>
+                <button class="close-help-btn hover:bg-indigo-500 p-1.5 rounded-lg transition-colors focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-5 text-slate-700">
+                <div class="flex gap-4 items-start">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</div>
+                    <div>
+                        <h3 class="font-bold text-slate-800">複製 JW 網址</h3>
+                        <p class="text-sm mt-1">前往 JW.org 的「分類」頁面（網址中需包含 <code class="bg-slate-100 text-pink-600 px-1 py-0.5 rounded text-xs">/categories/</code>），並將上方網址完整複製下來。</p>
+                    </div>
+                </div>
+                <div class="flex gap-4 items-start">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</div>
+                    <div>
+                        <h3 class="font-bold text-slate-800">貼上並提取</h3>
+                        <p class="text-sm mt-1">將網址貼入本工具的輸入框，點擊「立即提取影片」，系統將自動為您掃描並抓出所有影片。</p>
+                    </div>
+                </div>
+                <div class="flex gap-4 items-start">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</div>
+                    <div>
+                        <h3 class="font-bold text-slate-800">勾選想要的影片</h3>
+                        <p class="text-sm mt-1">您可以單獨點擊卡片來打勾，或者利用上方的「區間」工具（例如輸入 11~20）來快速批次選取。</p>
+                    </div>
+                </div>
+                <div class="flex gap-4 items-start">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center flex-shrink-0 mt-0.5">4</div>
+                    <div>
+                        <h3 class="font-bold text-slate-800">一鍵複製帶走</h3>
+                        <p class="text-sm mt-1">點擊「複製選取的連結」按鈕，就會自動幫您打包複製，直接去其他地方貼上即可！</p>
+                    </div>
+                </div>
+                <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex gap-2">
+                    <span>💡</span>
+                    <span><strong>注意：</strong>如果是「搜尋結果」頁面（網址包含 /search/），因為系統限制無法在此提取，請改用瀏覽器 F12 開發者工具腳本提取。</span>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button class="close-help-btn bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm">我知道了，開始使用！</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const urlInput = document.getElementById('urlInput');
         const fetchBtn = document.getElementById('fetchBtn');
         const resultsContainer = document.getElementById('results');
         const statusBox = document.getElementById('statusBox');
         const debugLog = document.getElementById('debugLog');
+        
+        // 選擇面板元素
+        const actionPanel = document.getElementById('actionPanel');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const copySelectedBtn = document.getElementById('copySelectedBtn');
+        const rangeStart = document.getElementById('rangeStart');
+        const rangeEnd = document.getElementById('rangeEnd');
+        const selectRangeBtn = document.getElementById('selectRangeBtn');
+
+        // --- 新增：使用說明 (Modal) 邏輯 ---
+        const helpModal = document.getElementById('helpModal');
+        const helpModalBg = document.getElementById('helpModalBg');
+        const helpModalContent = document.getElementById('helpModalContent');
+        const showHelpBtn = document.getElementById('showHelpBtn');
+        const closeHelpBtns = document.querySelectorAll('.close-help-btn');
+
+        function openHelpModal() {
+            helpModal.classList.remove('hidden');
+            // 延遲一點點以觸發動畫
+            setTimeout(() => {
+                helpModalBg.classList.remove('opacity-0');
+                helpModalContent.classList.remove('opacity-0', 'scale-95');
+            }, 10);
+        }
+
+        function closeHelpModal() {
+            helpModalBg.classList.add('opacity-0');
+            helpModalContent.classList.add('opacity-0', 'scale-95');
+            // 記錄已讀取狀態到瀏覽器中
+            localStorage.setItem('jw_extractor_help_seen', 'true');
+            // 等待動畫結束後隱藏
+            setTimeout(() => {
+                helpModal.classList.add('hidden');
+            }, 300);
+        }
+
+        showHelpBtn.addEventListener('click', openHelpModal);
+        helpModalBg.addEventListener('click', closeHelpModal);
+        closeHelpBtns.forEach(btn => btn.addEventListener('click', closeHelpModal));
+
+        // 頁面載入時檢查是否為第一次開啟
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!localStorage.getItem('jw_extractor_help_seen')) {
+                // 延遲半秒後自動彈出，視覺效果更好
+                setTimeout(openHelpModal, 500);
+            }
+        });
 
         // 日誌紀錄功能
         function log(msg) {
@@ -98,6 +223,7 @@
 
             setLoading(true);
             resultsContainer.innerHTML = '';
+            actionPanel.classList.add('hidden'); // 隱藏面板
             debugLog.innerHTML = ''; // 清空日誌
             showStatus('🔍 正在連接 API 伺服器...', 'success');
 
@@ -105,24 +231,15 @@
                 const { lang: uiLang, category: rootCat } = params;
                 log(`🌐 網址解析成功：語言 = ${uiLang}, 分類 = ${rootCat}`);
 
-                let apiLang = uiLang; // 預設使用網址語言
+                let apiLang = uiLang;
                 let allMedia = [];
                 let checkedKeys = new Set();
 
-                // 步驟 1: 動態獲取 JW 內部語言代碼 (把 cmn-hant 轉成 CH)
+                // 步驟 1: 動態獲取 JW 內部語言代碼
                 log(`🔄 正在進行語言代碼轉換...`);
-                
-                // 建立常見語言的強制對應表，確保萬無一失
                 const knownLangs = {
-                    'cmn-hant': 'CH',   // 繁體中文
-                    'cmn-hans': 'CHS',  // 簡體中文
-                    'en': 'E',          // 英文
-                    'ja': 'J',          // 日文
-                    'ko': 'KO',         // 韓文
-                    'es': 'S',          // 西班牙文
-                    'fr': 'F',          // 法文
-                    'pt': 'T',          // 葡萄牙文
-                    'de': 'X'           // 德文
+                    'cmn-hant': 'CH', 'cmn-hans': 'CHS', 'en': 'E', 'ja': 'J', 
+                    'ko': 'KO', 'es': 'S', 'fr': 'F', 'pt': 'T', 'de': 'X'
                 };
 
                 const uiLangLower = uiLang.toLowerCase();
@@ -153,7 +270,7 @@
 
                 // 步驟 2: 深度探測函數
                 async function deepProbe(key) {
-                    if (!key || checkedKeys.has(key) || allMedia.length >= 40) return;
+                    if (!key || checkedKeys.has(key) || allMedia.length >= 300) return;
                     checkedKeys.add(key);
 
                     const apiUrl = `https://b.jw-cdn.org/apis/mediator/v1/categories/${apiLang}/${key}?detailed=1&clientType=www`;
@@ -172,7 +289,7 @@
                         log(`✅ 於目錄 ${key} 發現 ${items.length} 個媒體項目`);
                         
                         items.forEach(v => {
-                            if (v.type === 'video' && allMedia.length < 40) {
+                            if (v.type === 'video' && allMedia.length < 300) {
                                 allMedia.push({
                                     title: v.title,
                                     guid: v.languageAgnosticNaturalKey,
@@ -181,13 +298,12 @@
                             }
                         });
 
-                        // 探測子分類或細分項目
                         const children = catData.subcategories || catData.subdivisions || [];
                         if (children.length > 0) log(`📂 發現 ${children.length} 個子目錄，準備遞歸...`);
                         
                         for (const child of children) {
                             const nextKey = child.key || child.id;
-                            if (nextKey && allMedia.length < 20) {
+                            if (nextKey && allMedia.length < 300) {
                                 await deepProbe(nextKey);
                             }
                         }
@@ -197,15 +313,12 @@
                 // 步驟 3: 開始探測
                 await deepProbe(rootCat);
                 
-                // 如果找不到，嘗試暴力命中年份（備用方案）
                 if (allMedia.length === 0 && rootCat.toLowerCase().includes('monthly')) {
                     const year = new Date().getFullYear();
-                    log(`⚠️ 首選路徑無影片，啟動備用探測 (年份 ${year}, ${year-1})...`);
+                    log(`⚠️ 首選路徑無影片，啟動備用探測...`);
                     await deepProbe(`StudioMonthlyPrograms${year}`);
                     await deepProbe(`VODMonthlyPrograms${year}`);
-                    if (allMedia.length === 0) {
-                        await deepProbe(`StudioMonthlyPrograms${year-1}`);
-                    }
+                    if (allMedia.length === 0) await deepProbe(`StudioMonthlyPrograms${year-1}`);
                 }
 
                 // 去重
@@ -223,9 +336,13 @@
                     showStatus('🔍 找不到影片。請查看下方日誌了解原因。', 'error');
                 } else {
                     log(`🎉 處理完成！共提取 ${unique.length} 則不重複影片。`);
-                    displayVideos(unique.slice(0, 20), uiLang, rootCat);
+                    displayVideos(unique.slice(0, 300), uiLang, rootCat);
                     showStatus(`✅ 成功找到 ${unique.length} 則影片`, 'success');
-                    document.getElementById('copyAllBtn').classList.remove('hidden');
+                    
+                    // 顯示操作面板並預設全選
+                    actionPanel.classList.remove('hidden');
+                    selectAllCheckbox.checked = true;
+                    updateSelectionState(); 
                 }
             } catch (e) {
                 log(`💥 系統發生未預期錯誤: ${e.message}`);
@@ -237,25 +354,107 @@
 
         function displayVideos(videos, lang, rootCat) {
             videos.forEach((v, i) => {
-                // 強制使用網址中的分類來生成最終連結
                 const videoUrl = `https://www.jw.org/${lang}/library/videos/#/${lang}/mediaitems/${rootCat}/${v.guid}`;
                 const div = document.createElement('div');
-                div.className = "video-card bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4";
+                div.className = "video-card bg-white p-3 pr-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-3 cursor-pointer hover:border-indigo-300";
+                div.onclick = (e) => {
+                    if(e.target.closest('button') || e.target.closest('a')) return;
+                    const cb = div.querySelector('.video-cb');
+                    cb.checked = !cb.checked;
+                    updateSelectionState();
+                };
+
                 div.innerHTML = `
-                    <div class="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xs">${i+1}</div>
-                    <div class="flex-grow min-w-0">
-                        <div class="font-bold text-slate-800 truncate text-sm">${v.title}</div>
-                        <div class="text-[10px] text-slate-400 font-mono mt-1">來自: ${v.originCat}</div>
+                    <div class="flex items-center pl-2">
+                        <input type="checkbox" value="${videoUrl}" class="video-cb w-5 h-5 rounded border-slate-300 cursor-pointer pointer-events-none" checked>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="copyToClipboard('${videoUrl}')" class="p-2 text-slate-400 hover:text-indigo-600 transition-colors" title="複製連結"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
-                        <a href="${videoUrl}" target="_blank" class="p-2 text-slate-400 hover:text-emerald-600 transition-colors" title="前往網頁測試"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg></a>
+                    <div class="w-7 h-7 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0">${i+1}</div>
+                    <div class="flex-grow min-w-0 pl-1">
+                        <div class="font-bold text-slate-800 truncate text-sm">${v.title}</div>
+                        <div class="text-[10px] text-slate-400 font-mono mt-0.5">來自: ${v.originCat}</div>
+                    </div>
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button onclick="copyToClipboard('${videoUrl}')" class="p-2 text-slate-400 hover:text-indigo-600 transition-colors bg-slate-50 rounded-lg hover:bg-indigo-50" title="單獨複製此連結"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                        <a href="${videoUrl}" target="_blank" class="p-2 text-slate-400 hover:text-emerald-600 transition-colors bg-slate-50 rounded-lg hover:bg-emerald-50" title="前往網頁測試"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg></a>
                     </div>
                 `;
                 resultsContainer.appendChild(div);
             });
         }
 
+        // --- 勾選與複製邏輯 ---
+
+        // 全選 / 取消全選 事件 (修正：只抓 #results 裡面的打勾框)
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const checkboxes = document.querySelectorAll('#results .video-cb');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+            updateSelectionState();
+        });
+
+        // 監聽個別勾選框變化
+        resultsContainer.addEventListener('change', (e) => {
+            if (e.target.classList.contains('video-cb')) {
+                updateSelectionState();
+            }
+        });
+
+        // 區間選取事件 (修正：只抓 #results 裡面的打勾框，避免選到全選框)
+        selectRangeBtn.onclick = () => {
+            const start = parseInt(rangeStart.value);
+            const end = parseInt(rangeEnd.value);
+            const checkboxes = document.querySelectorAll('#results .video-cb');
+            const total = checkboxes.length;
+            
+            if (isNaN(start) || isNaN(end) || start < 1 || end > total || start > end) {
+                alert(`⚠️ 請輸入有效的區間範圍！\n目前可選範圍：1 到 ${total}`);
+                return;
+            }
+
+            // 清空現有勾選
+            checkboxes.forEach(cb => cb.checked = false);
+            
+            // 勾選指定區間 (陣列索引從 0 開始，所以 start - 1)
+            for (let i = start - 1; i < end; i++) {
+                if (checkboxes[i]) checkboxes[i].checked = true;
+            }
+            
+            updateSelectionState();
+            log(`🎯 已自動選取第 ${start} 到 ${end} 個影片。`);
+        };
+
+        // 更新按鈕狀態 (修正：只抓 #results 裡面的打勾框)
+        function updateSelectionState() {
+            const checkboxes = document.querySelectorAll('#results .video-cb');
+            const checkedCount = document.querySelectorAll('#results .video-cb:checked').length;
+            
+            // 更新全選框狀態
+            selectAllCheckbox.checked = (checkedCount === checkboxes.length && checkboxes.length > 0);
+            selectAllCheckbox.indeterminate = (checkedCount > 0 && checkedCount < checkboxes.length);
+
+            // 更新按鈕文字與禁用狀態
+            if (checkedCount > 0) {
+                copySelectedBtn.innerText = `複製選取的連結 (${checkedCount})`;
+                copySelectedBtn.disabled = false;
+                copySelectedBtn.classList.replace('bg-slate-100', 'bg-indigo-100');
+                copySelectedBtn.classList.replace('text-slate-400', 'text-indigo-700');
+            } else {
+                copySelectedBtn.innerText = `請選擇影片`;
+                copySelectedBtn.disabled = true;
+                copySelectedBtn.classList.replace('bg-indigo-100', 'bg-slate-100');
+                copySelectedBtn.classList.replace('text-indigo-700', 'text-slate-400');
+            }
+        }
+
+        // 複製按鈕點擊事件 (修正：只抓 #results 裡面的打勾框)
+        copySelectedBtn.onclick = () => {
+            const checkedBoxes = document.querySelectorAll('#results .video-cb:checked');
+            if (checkedBoxes.length === 0) return;
+            
+            const links = Array.from(checkedBoxes).map(cb => cb.value).join('\n');
+            copyToClipboard(links, checkedBoxes.length);
+        };
+
+        // 共用工具函數
         function setLoading(l) {
             fetchBtn.disabled = l;
             fetchBtn.innerHTML = l ? '<span class="scanning">網路探測中...</span>' : '立即提取影片';
@@ -267,25 +466,25 @@
             statusBox.classList.remove('hidden');
         }
 
-        function copyToClipboard(t) {
+        function copyToClipboard(t, count = 1) {
             const el = document.createElement('textarea');
             el.value = t; document.body.appendChild(el);
             el.select(); document.execCommand('copy');
             document.body.removeChild(el);
-            const old = statusBox.innerText;
-            statusBox.innerText = '✨ 已複製所有連結！';
-            statusBox.className = 'mb-6 p-4 rounded-xl text-center font-medium bg-emerald-50 text-emerald-700 border border-emerald-100';
+            
+            const oldText = copySelectedBtn.innerText;
+            const originalClass = copySelectedBtn.className;
+            
+            copySelectedBtn.innerText = `✨ 成功複製 ${count} 個連結！`;
+            copySelectedBtn.className = 'bg-emerald-500 text-white font-bold py-2 px-6 rounded-lg transition-all shadow-md';
+            
             setTimeout(() => {
-                statusBox.innerText = old;
-                statusBox.classList.remove('bg-emerald-50', 'text-emerald-700', 'border-emerald-100');
-            }, 1500);
+                copySelectedBtn.innerText = oldText;
+                copySelectedBtn.className = originalClass;
+            }, 2000);
         }
 
         fetchBtn.onclick = fetchVideos;
-        document.getElementById('copyAllBtn').onclick = () => {
-            const links = Array.from(resultsContainer.querySelectorAll('a')).map(a => a.href).join('\n');
-            copyToClipboard(links);
-        };
     </script>
 </body>
 </html>
