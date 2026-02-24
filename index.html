@@ -198,20 +198,49 @@
             console.log(msg);
         }
 
+        // 🌟 升級版網址解析器：支援標準路徑與 Finder 分享連結
         function parseJwUrl(url) {
             try {
+                // 1. 嘗試解析 Finder 分享連結 (帶有 ?category=... 參數)
+                try {
+                    // 確保網址有 http 開頭才能被 URL 物件解析
+                    const validUrl = url.startsWith('http') ? url : 'https://' + url;
+                    const urlObj = new URL(validUrl);
+                    const catParam = urlObj.searchParams.get('category');
+                    const langParam = urlObj.searchParams.get('wtlocale') || urlObj.searchParams.get('locale');
+                    
+                    if (catParam) {
+                        let finalLang = langParam;
+                        // 如果分享連結沒有帶語言，嘗試從路徑中抓取
+                        if (!finalLang) {
+                            const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+                            finalLang = pathSegments.find(s => s.includes('-')) || 'CH';
+                        }
+                        return { lang: finalLang, category: catParam };
+                    }
+                } catch(e) { /* 解析失敗則退回原本的方法 */ }
+
+                // 2. 原本的 Hash 或標準路徑解析邏輯
                 const target = url.includes('#') ? url.split('#')[1] : url;
-                const segments = target.split('/').filter(s => s && s !== 'library' && s !== 'videos');
+                // 過濾掉無用的網址片段
+                const segments = target.split('/').filter(s => 
+                    s && s !== 'library' && s !== 'videos' && s !== 'https:' && s !== '' && !s.includes('www.jw.org')
+                );
+                
                 const lang = segments.find(s => s.includes('-')) || segments[0];
                 let category = '';
                 const catIdx = segments.indexOf('categories');
+                
                 if (catIdx !== -1 && segments[catIdx + 1]) {
-                    category = segments[catIdx + 1];
-                } else {
-                    category = segments[segments.length - 1];
+                    category = segments[catIdx + 1].split('?')[0]; // 移除尾部的參數
+                } else if (segments.length > 0) {
+                    category = segments[segments.length - 1].split('?')[0];
                 }
+                
                 return (lang && category) ? { lang, category } : null;
-            } catch (e) { return null; }
+            } catch (e) { 
+                return null; 
+            }
         }
 
         async function fetchVideos() {
@@ -228,24 +257,34 @@
             showStatus('🔍 正在連接 API 伺服器...', 'success');
 
             try {
-                const { lang: uiLang, category: rootCat } = params;
-                log(`🌐 網址解析成功：語言 = ${uiLang}, 分類 = ${rootCat}`);
+                const { lang: parsedLang, category: rootCat } = params;
+                log(`🌐 網址解析成功：語言 = ${parsedLang}, 分類 = ${rootCat}`);
 
-                let apiLang = uiLang;
+                let uiLang = parsedLang;
+                let apiLang = parsedLang;
                 let allMedia = [];
                 let checkedKeys = new Set();
 
-                // 步驟 1: 動態獲取 JW 內部語言代碼
-                log(`🔄 正在進行語言代碼轉換...`);
+                // 步驟 1: 動態獲取 JW 內部語言代碼與雙向轉換
+                log(`🔄 正在進行語言代碼與介面語言轉換...`);
                 const knownLangs = {
                     'cmn-hant': 'CH', 'cmn-hans': 'CHS', 'en': 'E', 'ja': 'J', 
                     'ko': 'KO', 'es': 'S', 'fr': 'F', 'pt': 'T', 'de': 'X'
                 };
+                // 建立反向對應表 (例如 'CH' -> 'cmn-hant')
+                const reverseLangs = Object.fromEntries(Object.entries(knownLangs).map(([k, v]) => [v, k]));
 
-                const uiLangLower = uiLang.toLowerCase();
-                if (knownLangs[uiLangLower]) {
-                    apiLang = knownLangs[uiLangLower];
-                    log(`✅ 強制語言對應成功: ${uiLang} ➝ ${apiLang}`);
+                const inputLangLower = parsedLang.toLowerCase();
+                const inputLangUpper = parsedLang.toUpperCase();
+
+                if (knownLangs[inputLangLower]) {
+                    apiLang = knownLangs[inputLangLower];
+                    uiLang = inputLangLower;
+                    log(`✅ 檢測為網頁語言 (UI Locale): ${uiLang} ➝ API代碼 ${apiLang}`);
+                } else if (reverseLangs[inputLangUpper]) {
+                    apiLang = inputLangUpper;
+                    uiLang = reverseLangs[inputLangUpper];
+                    log(`✅ 檢測為內部代碼 (API Code): ${apiLang} ➝ 網頁語言 ${uiLang}`);
                 } else {
                     log(`⚠️ 找不到預設對應，嘗試線上查詢...`);
                     try {
@@ -253,18 +292,19 @@
                         if (langRes.ok) {
                             const langData = await langRes.json();
                             const langMatch = langData.languages.find(l => 
-                                (l.locale && l.locale.toLowerCase() === uiLangLower) || 
-                                (l.code && l.code.toLowerCase() === uiLangLower)
+                                (l.locale && l.locale.toLowerCase() === inputLangLower) || 
+                                (l.code && l.code.toUpperCase() === inputLangUpper)
                             );
                             if (langMatch) {
                                 apiLang = langMatch.code;
-                                log(`✅ 線上對應內部語言代碼成功: ${uiLang} ➝ ${apiLang}`);
+                                uiLang = langMatch.locale || parsedLang;
+                                log(`✅ 線上對應成功: API代碼 = ${apiLang}, 網頁語言 = ${uiLang}`);
                             } else {
-                                log(`⚠️ 線上找不到對應，繼續使用原始語言代碼: ${uiLang}`);
+                                log(`⚠️ 線上找不到對應，繼續使用原始代碼: ${parsedLang}`);
                             }
                         }
                     } catch (e) {
-                        log(`⚠️ 語言清單獲取失敗，使用預設值: ${uiLang}`);
+                        log(`⚠️ 語言清單獲取失敗，使用預設值: ${parsedLang}`);
                     }
                 }
 
