@@ -315,7 +315,7 @@
 
                 // 步驟 2: 深度探測函數
                 async function deepProbe(key) {
-                    if (!key || checkedKeys.has(key) || allMedia.length >= 300) return;
+                    if (!key || checkedKeys.has(key) || allMedia.length >= 2000) return;
                     checkedKeys.add(key);
 
                     const apiUrl = `https://b.jw-cdn.org/apis/mediator/v1/categories/${apiLang}/${key}?detailed=1&clientType=www`;
@@ -334,7 +334,7 @@
                         log(`✅ 於目錄 ${key} 發現 ${items.length} 個媒體項目`);
                         
                         items.forEach(v => {
-                            if (v.type === 'video' && allMedia.length < 300) {
+                            if (v.type === 'video' && allMedia.length < 2000) {
                                 allMedia.push({
                                     title: v.title,
                                     guid: v.languageAgnosticNaturalKey,
@@ -348,7 +348,7 @@
                         
                         for (const child of children) {
                             const nextKey = child.key || child.id;
-                            if (nextKey && allMedia.length < 300) {
+                            if (nextKey && allMedia.length < 2000) {
                                 await deepProbe(nextKey);
                             }
                         }
@@ -382,7 +382,7 @@
                 } else {
                     log(`🎉 處理完成！共提取 ${unique.length} 則不重複影片。`);
                     // 傳遞 baseUrl 與 apiLang 給顯示函數
-                    displayVideos(unique.slice(0, 300), uiLang, rootCat, baseUrl, apiLang);
+                    displayVideos(unique.slice(0, 2000), uiLang, rootCat, baseUrl, apiLang);
                     showStatus(`✅ 成功找到 ${unique.length} 則影片`, 'success');
                     
                     // 顯示操作面板並預設全選
